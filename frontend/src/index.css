@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Outfit', sans-serif;
+  --color-pacblue-50: #EDFCFE;
+  --color-pacblue-100: #D3F5FA;
+  --color-pacblue-200: #ACEAF5;
+  --color-pacblue-300: #72D9EE;
+  --color-pacblue-400: #31BFDF;
+  --color-pacblue-500: #159FC1;
+  --color-pacblue-600: #1582A5;
+  --color-pacblue-700: #186986;
+  --color-pacblue-800: #1C566E;
+  --color-pacblue-900: #1C485D;
+  --color-pacblue-950: #0C2F40;
+}
+
+/* Custom base utility */
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: #EDFCFE;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(187, 85%, 96%, 1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(190, 80%, 93%, 0.7) 0, transparent 50%),
+    radial-gradient(at 50% 100%, hsla(192, 85%, 95%, 0.5) 0, transparent 50%);
+  background-attachment: fixed;
+  color: #0C2F40;
+}
+
+/* Custom premium light glassmorphic card styling - Pacific Blue themed */
+.glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(21, 159, 193, 0.08);
+  box-shadow: 
+    0 1px 3px 0 rgba(12, 47, 64, 0.01),
+    0 10px 40px -10px rgba(21, 159, 193, 0.05),
+    0 20px 40px -15px rgba(12, 47, 64, 0.02);
+}
+
+.glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-4px);
+  border-color: rgba(21, 159, 193, 0.25);
+  box-shadow: 
+    0 20px 40px -15px rgba(21, 159, 193, 0.12),
+    0 1px 3px 0 rgba(21, 159, 193, 0.04);
+}
+
+/* Animated gradient border glow */
+.glow-button {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.glow-button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transform: skewX(-25deg);
+  transition: 0.75s;
+}
+
+.glow-button:hover::after {
+  left: 125%;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #EDFCFE;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ACEAF5;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #159FC1;
+}
