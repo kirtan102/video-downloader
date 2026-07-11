@@ -1,82 +1,130 @@
-const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const { downloadVideo } = require("../services/download.service");
+const { logger } = require("../utils/logger");
 
-/**
- * Downloads a video using yt-dlp and merges it with best audio if necessary.
- * Returns a promise that resolves to the final merged file's path.
- * Also returns a cancel function to terminate the download process early.
- */
-function downloadVideo(url, formatId, uniqueId) {
-    const tempDir = path.join(__dirname, "../../temp");
-    
-    // Ensure the temp directory exists
-    if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-    }
+exports.downloadVideoController = async (req, res, next) => {
+    const { url, formatId } = req.query;
 
-    // Output template with unique prefix to identify the file later
-    const outputTemplate = path.join(tempDir, `temp_${uniqueId}_%(title)s.%(ext)s`);
+    const uniqueId =
+        `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Use specific format with fallback to best audio if format is video-only
-    const formatSpec = `${formatId}+bestaudio/best`;
+    logger.info(
+        `Starting download for URL: ${url}, Format: ${formatId}, ID: ${uniqueId}`
+    );
 
-    const args = [
-        "-f", formatSpec,
-        "--no-playlist",
-        "--geo-bypass",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "-o", outputTemplate,
-        url
-    ];
+    const { promise, cancel } = downloadVideo(
+        url,
+        formatId,
+        uniqueId
+    );
 
-    const yt = spawn("yt-dlp", args);
+    let downloadedFilePath = null;
+    let isClientDisconnected = false;
 
-    let stderrOutput = "";
+    res.on("close", () => {
+        if (!res.writableEnded) {
+            isClientDisconnected = true;
 
-    const promise = new Promise((resolve, reject) => {
-        yt.stderr.on("data", (data) => {
-            stderrOutput += data.toString();
-        });
+            logger.warn(
+                `Client disconnected during download for ID: ${uniqueId}. Cleaning up...`
+            );
 
-        yt.on("close", (code) => {
-            if (code !== 0) {
-                return reject(new Error(stderrOutput || `yt-dlp exited with code ${code}`));
-            }
+            cancel();
 
-            // Find the finished file in the temp directory by looking for the uniqueId prefix
-            try {
-                const files = fs.readdirSync(tempDir);
-                const matchingFile = files.find(file => file.startsWith(`temp_${uniqueId}_`));
+            if (
+                downloadedFilePath &&
+                fs.existsSync(downloadedFilePath)
+            ) {
+                try {
+                    fs.unlinkSync(downloadedFilePath);
 
-                if (!matchingFile) {
-                    return reject(new Error("Downloaded file not found in temp directory"));
+                    logger.info(
+                        `Deleted temp file after client disconnect: ${downloadedFilePath}`
+                    );
+                } catch (err) {
+                    logger.error(
+                        `Error deleting temp file after disconnect: ${err.message}`
+                    );
                 }
-
-                const absolutePath = path.join(tempDir, matchingFile);
-                resolve(absolutePath);
-            } catch (err) {
-                reject(err);
-            }
-        });
-
-        yt.on("error", (err) => {
-            reject(err);
-        });
-    });
-
-    return {
-        promise,
-        cancel: () => {
-            try {
-                yt.kill("SIGKILL");
-            } catch (err) {
-                console.error("Failed to kill yt-dlp process:", err);
             }
         }
-    };
-}
+    });
 
-module.exports = {
-    downloadVideo
+    try {
+        downloadedFilePath = await promise;
+
+        if (isClientDisconnected) {
+            if (
+                downloadedFilePath &&
+                fs.existsSync(downloadedFilePath)
+            ) {
+                fs.unlinkSync(downloadedFilePath);
+            }
+
+            return;
+        }
+
+        const originalName = path.basename(downloadedFilePath);
+
+        const cleanName =
+            originalName.replace(
+                /^temp_[^_]+_[^_]+_/,
+                ""
+            ) || originalName;
+
+        logger.info(
+            `Download completed. Streaming file ${cleanName} to client...`
+        );
+
+        res.download(
+            downloadedFilePath,
+            cleanName,
+            (err) => {
+                try {
+                    if (fs.existsSync(downloadedFilePath)) {
+                        fs.unlinkSync(downloadedFilePath);
+
+                        logger.info(
+                            `Successfully deleted temp file: ${downloadedFilePath}`
+                        );
+                    }
+                } catch (cleanupErr) {
+                    logger.error(
+                        `Failed to delete temp file: ${cleanupErr.message}`
+                    );
+                }
+
+                if (err && !res.headersSent) {
+                    logger.error(
+                        `Error streaming download: ${err.message}`
+                    );
+
+                    return next(err);
+                }
+            }
+        );
+    } catch (err) {
+        logger.error(
+            `Download failed for ID ${uniqueId}: ${err.message}`
+        );
+
+        if (
+            downloadedFilePath &&
+            fs.existsSync(downloadedFilePath)
+        ) {
+            try {
+                fs.unlinkSync(downloadedFilePath);
+            } catch { }
+        }
+
+        if (!res.headersSent) {
+            res.status(500).json({
+                success: false,
+                message:
+                    err.message ||
+                    "Failed to download video",
+            });
+        }
+    }
 };
