@@ -1,0 +1,4 @@
+export const API_BASE =
+  import.meta.env.PROD
+    ? ""
+    : "http://localhost:3000";

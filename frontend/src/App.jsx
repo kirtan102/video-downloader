@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from './config';
 import { 
   Download, 
   Link2, 
@@ -77,7 +78,7 @@ function App() {
     setDownloadJob(null);
 
     try {
-      const response = await fetch('http://localhost:3000/api/video/extract', {
+      const response = await fetch(`${API_BASE}/api/video/extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,7 +117,7 @@ function App() {
     });
 
     // Trigger the real browser download
-    const downloadUrl = `http://localhost:3000/api/video/download?url=${encodeURIComponent(url)}&formatId=${qualityOption.formatId}`;
+    const downloadUrl = `${API_BASE}/api/video/download?url=${encodeURIComponent(url)}&formatId=${qualityOption.formatId}`;
     window.location.href = downloadUrl;
   };
 
