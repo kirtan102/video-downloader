@@ -1,130 +1,135 @@
+const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const { downloadVideo } = require("../services/download.service");
-const { logger } = require("../utils/logger");
 
-exports.downloadVideoController = async (req, res, next) => {
-    const { url, formatId } = req.query;
+const PYTHON_PATH = path.resolve(
+    __dirname,
+    "../../venv/bin/python"
+);
 
-    const uniqueId =
-        `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+function normalizeUrl(url) {
+    return url.replace(
+        /https?:\/\/(www\.)?pornhub\.org/i,
+        "https://www.pornhub.com"
+    );
+}
 
-    logger.info(
-        `Starting download for URL: ${url}, Format: ${formatId}, ID: ${uniqueId}`
+function downloadVideo(url, formatId, uniqueId) {
+    const tempDir = path.join(__dirname, "../../temp");
+
+    if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, {
+            recursive: true
+        });
+    }
+
+    const normalizedUrl = normalizeUrl(url);
+
+    const outputTemplate = path.join(
+        tempDir,
+        `temp_${uniqueId}_%(title)s.%(ext)s`
     );
 
-    const { promise, cancel } = downloadVideo(
-        url,
-        formatId,
-        uniqueId
+    const formatSpec = `${formatId}+bestaudio/best`;
+
+    const args = [
+        "-m",
+        "yt_dlp",
+        "-f",
+        formatSpec,
+        "--no-playlist",
+        "--geo-bypass",
+        "--js-runtimes",
+        "node",
+        "-o",
+        outputTemplate,
+        normalizedUrl
+    ];
+
+    console.log(
+        "[yt-dlp] Download URL:",
+        normalizedUrl
     );
 
-    let downloadedFilePath = null;
-    let isClientDisconnected = false;
+    console.log(
+        "[yt-dlp] Format:",
+        formatSpec
+    );
 
-    res.on("close", () => {
-        if (!res.writableEnded) {
-            isClientDisconnected = true;
+    const yt = spawn(PYTHON_PATH, args);
 
-            logger.warn(
-                `Client disconnected during download for ID: ${uniqueId}. Cleaning up...`
+    let stderrOutput = "";
+
+    const promise = new Promise((resolve, reject) => {
+        yt.stderr.on("data", (data) => {
+            stderrOutput += data.toString();
+        });
+
+        yt.on("error", (err) => {
+            reject(
+                new Error(
+                    `Failed to start yt-dlp: ${err.message}`
+                )
             );
+        });
 
-            cancel();
+        yt.on("close", (code) => {
+            if (code !== 0) {
+                return reject(
+                    new Error(
+                        stderrOutput ||
+                        `yt-dlp exited with code ${code}`
+                    )
+                );
+            }
 
-            if (
-                downloadedFilePath &&
-                fs.existsSync(downloadedFilePath)
-            ) {
-                try {
-                    fs.unlinkSync(downloadedFilePath);
+            try {
+                const files = fs.readdirSync(tempDir);
 
-                    logger.info(
-                        `Deleted temp file after client disconnect: ${downloadedFilePath}`
-                    );
-                } catch (err) {
-                    logger.error(
-                        `Error deleting temp file after disconnect: ${err.message}`
+                const matchingFile = files.find((file) =>
+                    file.startsWith(
+                        `temp_${uniqueId}_`
+                    )
+                );
+
+                if (!matchingFile) {
+                    return reject(
+                        new Error(
+                            "Downloaded file not found in temp directory"
+                        )
                     );
                 }
+
+                const absolutePath = path.join(
+                    tempDir,
+                    matchingFile
+                );
+
+                resolve(absolutePath);
+            } catch (err) {
+                reject(err);
             }
-        }
+        });
     });
 
-    try {
-        downloadedFilePath = await promise;
+    return {
+        promise,
 
-        if (isClientDisconnected) {
-            if (
-                downloadedFilePath &&
-                fs.existsSync(downloadedFilePath)
-            ) {
-                fs.unlinkSync(downloadedFilePath);
-            }
-
-            return;
-        }
-
-        const originalName = path.basename(downloadedFilePath);
-
-        const cleanName =
-            originalName.replace(
-                /^temp_[^_]+_[^_]+_/,
-                ""
-            ) || originalName;
-
-        logger.info(
-            `Download completed. Streaming file ${cleanName} to client...`
-        );
-
-        res.download(
-            downloadedFilePath,
-            cleanName,
-            (err) => {
-                try {
-                    if (fs.existsSync(downloadedFilePath)) {
-                        fs.unlinkSync(downloadedFilePath);
-
-                        logger.info(
-                            `Successfully deleted temp file: ${downloadedFilePath}`
-                        );
-                    }
-                } catch (cleanupErr) {
-                    logger.error(
-                        `Failed to delete temp file: ${cleanupErr.message}`
-                    );
-                }
-
-                if (err && !res.headersSent) {
-                    logger.error(
-                        `Error streaming download: ${err.message}`
-                    );
-
-                    return next(err);
-                }
-            }
-        );
-    } catch (err) {
-        logger.error(
-            `Download failed for ID ${uniqueId}: ${err.message}`
-        );
-
-        if (
-            downloadedFilePath &&
-            fs.existsSync(downloadedFilePath)
-        ) {
+        cancel: () => {
             try {
-                fs.unlinkSync(downloadedFilePath);
-            } catch { }
+                if (!yt.killed) {
+                    yt.kill("SIGKILL");
+                }
+            } catch (err) {
+                console.error(
+                    "Failed to kill yt-dlp process:",
+                    err
+                );
+            }
         }
+    };
+}
 
-        if (!res.headersSent) {
-            res.status(500).json({
-                success: false,
-                message:
-                    err.message ||
-                    "Failed to download video",
-            });
-        }
-    }
+module.exports = {
+    downloadVideo
 };
