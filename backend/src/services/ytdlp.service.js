@@ -11,7 +11,11 @@ function extractVideoInfo(url) {
             "-J",
             "--no-playlist",
             "--geo-bypass",
-            url,
+            "--js-runtimes",
+            "node",
+            "--impersonate",
+            "chrome",
+            url
         ];
 
         const yt = spawn(PYTHON_PATH, args);
