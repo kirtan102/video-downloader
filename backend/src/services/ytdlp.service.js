@@ -1,7 +1,10 @@
 const { spawn } = require("child_process");
 const path = require("path");
 
-const PYTHON_PATH = path.resolve(__dirname, "../../venv/bin/python");
+const PYTHON_PATH = path.resolve(
+    __dirname,
+    "../../venv/bin/python"
+);
 
 function extractVideoInfo(url) {
     return new Promise((resolve, reject) => {
@@ -13,10 +16,13 @@ function extractVideoInfo(url) {
             "--geo-bypass",
             "--js-runtimes",
             "node",
-            "--impersonate",
-            "chrome",
             url
         ];
+
+        console.log(
+            "[yt-dlp] Extracting URL:",
+            url
+        );
 
         const yt = spawn(PYTHON_PATH, args);
 
@@ -33,23 +39,34 @@ function extractVideoInfo(url) {
 
         yt.on("error", (err) => {
             reject(
-                new Error(`Failed to start yt-dlp: ${err.message}`)
+                new Error(
+                    `Failed to start yt-dlp: ${err.message}`
+                )
             );
         });
 
         yt.on("close", (code) => {
             if (code !== 0) {
                 return reject(
-                    new Error(error.trim() || "yt-dlp failed")
+                    new Error(
+                        error.trim() || "yt-dlp failed"
+                    )
                 );
             }
 
             try {
                 const videoInfo = JSON.parse(output);
                 resolve(videoInfo);
-            } catch {
+            } catch (err) {
+                console.error(
+                    "[yt-dlp] JSON parse error:",
+                    err.message
+                );
+
                 reject(
-                    new Error("Failed to parse yt-dlp output")
+                    new Error(
+                        "Failed to parse yt-dlp output"
+                    )
                 );
             }
         });
@@ -57,5 +74,5 @@ function extractVideoInfo(url) {
 }
 
 module.exports = {
-    extractVideoInfo,
+    extractVideoInfo
 };
